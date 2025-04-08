@@ -1,6 +1,9 @@
 STEPS
 
+
 jayasurya-murali@jaz MINI-2-CODE 2 % cd build && rm -rf CMakeCache.txt CMakeFiles && export CC=clang && export CXX=clang++ && cmake .. && make
+
+jayasurya-murali@jaz MINI-2-CODE 2 % ls -la build/basecamp_node
 
 
 # MINI2 Basecamp - Distributed Query System

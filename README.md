@@ -1,3 +1,8 @@
+STEPS
+
+jayasurya-murali@jaz MINI-2-CODE 2 % cd build && rm -rf CMakeCache.txt CMakeFiles && export CC=clang && export CXX=clang++ && cmake .. && make
+
+
 # MINI2 Basecamp - Distributed Query System
 
 This project implements a distributed query system using an overlay network with shared memory optimization for local nodes. The system is designed to run across multiple machines, with nodes communicating via gRPC.

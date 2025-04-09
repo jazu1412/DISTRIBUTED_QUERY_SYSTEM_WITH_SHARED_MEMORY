@@ -141,6 +141,7 @@ void Node::forwardQuery(const QueryRequest& req,
     std::vector<std::future<QueryResponse>> futs;
     for (auto& nbr : neighbors_) {
         if (nbr.id == sender) continue;
+        std::cout << "[" << id_ << "] Forwarding query " << req.query_id() << " to neighbor " << nbr.id << std::endl;
         futs.push_back(std::async(std::launch::async, [&, req]() {
             QueryRequest subReq = req;
             subReq.set_sender_id(id_);
@@ -155,13 +156,21 @@ void Node::forwardQuery(const QueryRequest& req,
         }));
     }
     for (auto& f : futs) {
-        results.push_back(f.get());
+        auto r = f.get();
+        std::cout << "[" << id_ << "] Received response with " << r.records_size() << " records from a neighbor" << std::endl;
+        results.push_back(r);
     }
 }
 
 Status Node::QueryByInjuryRange(ServerContext* ctx,
                                 const QueryRequest* req,
                                 QueryResponse* resp) {
+
+
+
+    std::cout << "[" << id_ << "] Received query_id: " << req->query_id()  << " from sender: " << req->sender_id() << std::endl;
+
+
     // 1. check cache
     if (checkCache(*req, resp)) {
         return Status::OK;

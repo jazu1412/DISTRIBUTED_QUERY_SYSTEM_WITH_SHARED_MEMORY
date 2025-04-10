@@ -26,10 +26,12 @@ Node::Node(const std::string& nodeId, const std::string& configFile)
         if (nbr.localEdge) {
             // define a stable name
             std::string nm = nbr.id < id_ ? ("shm_"+nbr.id+"_"+id_) : ("shm_"+id_+"_"+nbr.id);
-            ShmCache* ptr = (ShmCache*) openOrCreateShm(nm,1024*1024); // 1MB shared memory
+            // Use 1MB as the shared memory size
+            ShmCache* ptr = (ShmCache*) openOrCreateShm(nm, 1024*1024);
             if (!ptr) {
                 std::cerr << "[" << id_ << "] Failed to create shared memory with " << nbr.id << std::endl;
             } else {
+                std::cout << "[" << id_ << "] Successfully created shared memory with " << nbr.id << std::endl;
                 localShmMap_[nbr.id] = ptr;
             }
         }
@@ -91,51 +93,103 @@ void Node::startServer() {
 }
 
 bool Node::checkCache(const QueryRequest& req, QueryResponse* out) {
-    auto it = cache_.find(req.query_id());
+    std::string queryId = req.query_id();
+    
+    // First check in-memory cache (faster)
+    auto it = cache_.find(queryId);
     if (it != cache_.end()) {
         *out = it->second;
-        std::cout << "[" << id_ << "] in-mem cache hit for " << req.query_id() << "\n";
+        std::cout << "[" << id_ << "] in-mem cache hit for " << queryId << "\n";
         return true;
     }
 
-    // check shared mem
+    // Then check shared memory cache
     for (auto& kv : localShmMap_) {
+        std::string neighborId = kv.first;
         ShmCache* shm = kv.second;
-        if (!shm) continue;
-        if (!shm->ready) continue;
-        if (req.query_id() == std::string(shm->query_id)) {
-            // parse
-            std::string raw((char*)shm->data, shm->data_size);
-            QueryResponse tmp;
-            tmp.ParseFromString(raw);
-            *out = tmp;
-            cache_[req.query_id()] = tmp;
-            std::cout << "["<<id_<<"] SHM cache hit for "<<req.query_id()<<" from "<<kv.first<<"\n";
-            return true;
+        
+        // Skip invalid shared memory segments
+        if (!shm) {
+            std::cout << "[" << id_ << "] Shared memory with " << neighborId << " is null" << std::endl;
+            continue;
+        }
+        
+        // Skip segments that are being updated
+        if (!shm->ready) {
+            std::cout << "[" << id_ << "] Shared memory with " << neighborId << " is not ready" << std::endl;
+            continue;
+        }
+        
+        // Check if this segment has the query we're looking for
+        std::string cachedQueryId(shm->query_id);
+        if (queryId == cachedQueryId) {
+            try {
+                // Parse the serialized response
+                std::string raw((char*)shm->data, shm->data_size);
+                QueryResponse tmp;
+                if (!tmp.ParseFromString(raw)) {
+                    std::cerr << "[" << id_ << "] Failed to parse shared memory data from " 
+                              << neighborId << std::endl;
+                    continue;
+                }
+                
+                // Copy the response and update in-memory cache
+                *out = tmp;
+                cache_[queryId] = tmp;
+                
+                std::cout << "[" << id_ << "] SHM cache hit for " << queryId 
+                          << " from " << neighborId << " (" << shm->data_size 
+                          << " bytes, " << tmp.records_size() << " records)" << std::endl;
+                return true;
+            } catch (const std::exception& e) {
+                std::cerr << "[" << id_ << "] Exception while parsing shared memory data: " 
+                          << e.what() << std::endl;
+            }
         }
     }
 
+    // Not found in any cache
     return false;
 }
 
 void Node::updateCache(const QueryRequest& req, const QueryResponse& r) {
-    cache_[req.query_id()] = r;
+    std::string queryId = req.query_id();
+    // Update in-memory cache
+    cache_[queryId] = r;
 
-    // also store in shm if local
+    // Also store in shared memory if we have local neighbors
     for (auto& kv : localShmMap_) {
         ShmCache* shm = kv.second;
         if (!shm) continue;
+        
+        // Set ready to false while updating
         shm->ready = false;
+        
+        // Clear and set the query ID
         memset(shm->query_id, 0, sizeof(shm->query_id));
-        strncpy(shm->query_id, req.query_id().c_str(), sizeof(shm->query_id)-1);
+        strncpy(shm->query_id, queryId.c_str(), sizeof(shm->query_id)-1);
+        
+        // Serialize the response
         auto ser = r.SerializeAsString();
+        
+        // Check if it fits in the shared memory buffer
         if (ser.size() > sizeof(shm->data)) {
-            std::cout << "["<<id_<<"] Not enough shm space for cache\n";
+            std::cout << "[" << id_ << "] Not enough shm space for cache: " 
+                      << ser.size() << " bytes needed, " 
+                      << sizeof(shm->data) << " bytes available" << std::endl;
             continue;
         }
+        
+        // Copy the serialized data to shared memory
         memcpy(shm->data, ser.data(), ser.size());
         shm->data_size = ser.size();
+        
+        // Mark as ready for reading
         shm->ready = true;
+        
+        std::cout << "[" << id_ << "] Updated shared memory cache for query " 
+                  << queryId << " with neighbor " << kv.first 
+                  << " (" << ser.size() << " bytes)" << std::endl;
     }
 }
 

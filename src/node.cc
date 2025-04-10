@@ -96,12 +96,12 @@ bool Node::checkCache(const QueryRequest& req, QueryResponse* out) {
     std::string queryId = req.query_id();
     
     // First check in-memory cache (faster)
-    auto it = cache_.find(queryId);
-    if (it != cache_.end()) {
-        *out = it->second;
-        std::cout << "[" << id_ << "] in-mem cache hit for " << queryId << "\n";
-        return true;
-    }
+    // auto it = cache_.find(queryId);
+    // if (it != cache_.end()) {
+    //     *out = it->second;
+    //     std::cout << "[" << id_ << "] in-mem cache hit for " << queryId << "\n";
+    //     return true;
+    // }
 
     // Then check shared memory cache
     for (auto& kv : localShmMap_) {

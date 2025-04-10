@@ -26,8 +26,12 @@ Node::Node(const std::string& nodeId, const std::string& configFile)
         if (nbr.localEdge) {
             // define a stable name
             std::string nm = nbr.id < id_ ? ("shm_"+nbr.id+"_"+id_) : ("shm_"+id_+"_"+nbr.id);
-            ShmCache* ptr = (ShmCache*) openOrCreateShm(nm, 1024*1024);
-            localShmMap_[nbr.id] = ptr;
+            ShmCache* ptr = (ShmCache*) openOrCreateShm(nm,1024*1024); // 1MB shared memory
+            if (!ptr) {
+                std::cerr << "[" << id_ << "] Failed to create shared memory with " << nbr.id << std::endl;
+            } else {
+                localShmMap_[nbr.id] = ptr;
+            }
         }
     }
 }

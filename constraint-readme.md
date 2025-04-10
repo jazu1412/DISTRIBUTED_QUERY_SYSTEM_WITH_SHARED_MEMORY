@@ -316,8 +316,8 @@ This implementation satisfies the constraint by focusing on the overlay network 
 
 While the system successfully addresses the constraints, there are some issues and observations worth noting:
 
-1. **Redundant Query Forwarding:**
-   - The logs show redundant query forwarding between nodes:
+1. **Redundant Query Forwarding (Fixed):**
+   - The original implementation showed redundant query forwarding between nodes:
    ```
    [C] Forwarding query e973c3c1 to neighbor E
    [C] Received query_id: e973c3c1 from sender: E
@@ -325,17 +325,84 @@ While the system successfully addresses the constraints, there are some issues a
    [C] Received query_id: e973c3c1 from sender: B
    [C] Forwarding query e973c3c1 to neighbor E
    ```
-   - This suggests that the loop prevention mechanism based on `sender_id` is not fully effective.
-   - The issue might be that a node only avoids forwarding back to the immediate sender, but not to nodes it has already forwarded to.
-   - A more robust solution would be to track all nodes that have already seen a query.
+   - This was because the loop prevention mechanism based on `sender_id` was not fully effective.
+   - The issue was that a node only avoided forwarding back to the immediate sender, but not to nodes it had already forwarded to.
+   - This has been fixed by implementing two levels of cycle prevention:
+     1. Tracking which queries have been forwarded to which neighbors to avoid redundant forwarding:
+     ```cpp
+     // Get or create the set of neighbors this query has been forwarded to
+     auto& forwardedTo = forwardedQueries_[req.query_id()];
+     
+     for (auto& nbr : neighbors_) {
+         // Skip the sender and nodes we've already forwarded this query to
+         if (nbr.id == sender || forwardedTo.find(nbr.id) != forwardedTo.end()) continue;
+         
+         // Mark this neighbor as having received this query
+         forwardedTo.insert(nbr.id);
+         // ...
+     }
+     ```
+     2. Tracking which queries have already been processed to break cycles in the network:
+     ```cpp
+     // Check if we've already processed this query (to break cycles)
+     static std::unordered_set<std::string> processedQueries;
+     bool alreadyProcessed = processedQueries.find(queryId) != processedQueries.end();
+     
+     // If we've already processed this query, just return what we have in cache
+     if (alreadyProcessed) {
+         std::cout << "[" << id_ << "] Already processed query " << queryId 
+                   << ", skipping redundant processing" << std::endl;
+         return Status::OK;
+     }
+     
+     // Mark this query as processed
+     processedQueries.insert(queryId);
+     ```
+   - These changes have significantly reduced redundant query forwarding in the system.
 
-2. **Shared Memory Size Limitations:**
+2. **Duplicate Records in Results (Fixed):**
+   - The original implementation did not deduplicate records when merging results from different nodes.
+   - This led to duplicate records in the final response, as the same record could be returned by multiple nodes.
+   - This has been fixed by implementing record deduplication based on record_id:
+   ```cpp
+   // 4. merge with deduplication
+   std::unordered_set<int> seen_record_ids;
+   
+   // First add local records and track their IDs
+   for (auto& r : local) {
+       seen_record_ids.insert(r.record_id());
+   }
+   
+   // Then add records from neighbors, skipping duplicates
+   for (auto& nr : neighborRes) {
+       for (auto& rr : nr.records()) {
+           // Skip if we've already seen this record ID
+           if (seen_record_ids.find(rr.record_id()) != seen_record_ids.end()) {
+               std::cout << "[" << id_ << "] Skipping duplicate record " << rr.record_id() << std::endl;
+               continue;
+           }
+           
+           // Add the record and mark it as seen
+           seen_record_ids.insert(rr.record_id());
+           auto p = combined.add_records();
+           p->CopyFrom(rr);
+       }
+   }
+   ```
+   - This ensures that each record appears only once in the final response, even if it was returned by multiple nodes.
+
+2. **Shared Memory Caching Issues:**
    - During development, there were issues with shared memory size limitations:
    ```
    [B] Not enough shm space for cache
    ```
    - This was addressed by adjusting the shared memory buffer size, but it highlights a limitation of the current approach.
    - A more scalable solution might involve chunking large responses or using a more sophisticated shared memory management strategy.
+   
+   - There are also platform-specific issues with shared memory caching:
+     - Shared memory cache hits are observed on Linux but are less frequent on macOS.
+     - This could be due to differences in how shared memory is implemented on these platforms.
+     - The macOS implementation might need additional tuning or a different approach to shared memory management.
 
 3. **Real Data Integration:**
    - The system now successfully processes real collision data from the CSV file.

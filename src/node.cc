@@ -268,15 +268,29 @@ Status Node::QueryByInjuryRange(ServerContext* ctx,
     std::vector<QueryResponse> neighborRes;
     forwardQuery(*req, neighborRes, req->sender_id());
 
-    // 4. merge
+    // 4. merge with deduplication
+    std::unordered_set<int> seen_record_ids;
+    
+    // First add local records and track their IDs
+    for (auto& r : local) {
+        seen_record_ids.insert(r.record_id());
+    }
+    
+    // Then add records from neighbors, skipping duplicates
     for (auto& nr : neighborRes) {
         for (auto& rr : nr.records()) {
+            // Skip if we've already seen this record ID
+            if (seen_record_ids.find(rr.record_id()) != seen_record_ids.end()) {
+                std::cout << "[" << id_ << "] Skipping duplicate record " << rr.record_id() << std::endl;
+                continue;
+            }
+            
+            // Add the record and mark it as seen
+            seen_record_ids.insert(rr.record_id());
             auto p = combined.add_records();
             p->CopyFrom(rr);
         }
     }
-
-    // skip dedup for brevity
 
     // 5. cache
     updateCache(*req, combined);

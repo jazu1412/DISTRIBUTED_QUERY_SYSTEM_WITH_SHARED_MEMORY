@@ -179,16 +179,28 @@ void Node::forwardQuery(const QueryRequest& req,
 Status Node::QueryByInjuryRange(ServerContext* ctx,
                                 const QueryRequest* req,
                                 QueryResponse* resp) {
+    std::string queryId = req->query_id();
+    std::cout << "[" << id_ << "] Received query_id: " << queryId  << " from sender: " << req->sender_id() << std::endl;
 
-
-
-    std::cout << "[" << id_ << "] Received query_id: " << req->query_id()  << " from sender: " << req->sender_id() << std::endl;
-
+    // Check if we've already processed this query (to break cycles)
+    static std::unordered_set<std::string> processedQueries;
+    bool alreadyProcessed = processedQueries.find(queryId) != processedQueries.end();
 
     // 1. check cache
     if (checkCache(*req, resp)) {
         return Status::OK;
     }
+
+    // If we've already processed this query, just return what we have in cache
+    // This shouldn't happen now that we have proper caching, but it's a safeguard
+    if (alreadyProcessed) {
+        std::cout << "[" << id_ << "] Already processed query " << queryId << ", skipping redundant processing" << std::endl;
+        // Return an empty response since we don't have it in cache
+        return Status::OK;
+    }
+
+    // Mark this query as processed
+    processedQueries.insert(queryId);
 
     // 2. local filter
     auto local = dataMgr_.filterByInjuryRange(req->min_injury(), req->max_injury());

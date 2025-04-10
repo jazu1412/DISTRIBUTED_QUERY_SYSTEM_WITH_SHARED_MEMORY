@@ -281,7 +281,7 @@ Status Node::QueryByInjuryRange(ServerContext* ctx,
         for (auto& rr : nr.records()) {
             // Skip if we've already seen this record ID
             if (seen_record_ids.find(rr.record_id()) != seen_record_ids.end()) {
-                std::cout << "[" << id_ << "] Skipping duplicate record " << rr.record_id() << std::endl;
+            //    std::cout << "[" << id_ << "] Skipping duplicate record " << rr.record_id() << std::endl;
                 continue;
             }
             

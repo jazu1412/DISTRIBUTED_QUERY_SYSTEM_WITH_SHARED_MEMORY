@@ -418,6 +418,58 @@ While the system successfully addresses the constraints, there are some issues a
    - The transactionless caching mechanism helps improve performance for repeated queries.
    - However, the redundant query forwarding issue could impact performance in a larger network.
 
+## Testing Shared Memory Caching
+
+To facilitate testing of the shared memory caching mechanism, the Python client has been enhanced to allow:
+
+1. **Specifying a custom query ID**: This allows sending the same query multiple times to test cache hits.
+2. **Targeting specific nodes**: This allows testing shared memory caching on different machines (e.g., Linux vs. macOS).
+3. **Specifying a custom sender ID**: This allows simulating queries from different sources.
+
+### Usage Examples
+
+```bash
+# Normal query to node A (macOS)
+python client.py 10.0.0.35:50051 10 11
+
+# Query with specific ID to node A (macOS)
+python client.py 10.0.0.35:50051 10 11 abc123
+
+# Query with specific ID to node C (Linux)
+python client.py 10.0.0.16:50053 10 11 abc123
+
+# Query with specific ID to node C (Linux), pretending to be node B
+python client.py 10.0.0.16:50053 10 11 abc123 B
+```
+
+### Testing Procedure
+
+To test shared memory caching across different nodes:
+
+1. First, send a query to node A with a specific query ID:
+   ```bash
+   python client.py 10.0.0.35:50051 10 11 test123
+   ```
+
+2. Then, send the same query to node B (which is on the same machine as A):
+   ```bash
+   python client.py 10.0.0.35:50052 10 11 test123
+   ```
+   You should see a shared memory cache hit in the logs.
+
+3. Similarly, to test on Linux, send a query to node C:
+   ```bash
+   python client.py 10.0.0.16:50053 10 11 test456
+   ```
+
+4. Then, send the same query to node E (which is on the same machine as C):
+   ```bash
+   python client.py 10.0.0.16:50055 10 11 test456
+   ```
+   You should see a shared memory cache hit in the logs.
+
+This testing procedure allows verifying that shared memory caching works correctly on both macOS and Linux platforms.
+
 ## Summary
 
 The distributed query system successfully addresses all four constraints:
@@ -426,10 +478,16 @@ The distributed query system successfully addresses all four constraints:
 
 2. It avoids hard-coded connections by using an external configuration file to define the network topology.
 
-3. It explores overlay networks and transactionless caching through a flexible network structure and simple caching mechanisms.
+3. It explores overlays and transactionless caching through a flexible network structure and simple caching mechanisms.
 
 4. It focuses on the overlay network implementation with cache coherency as a supporting feature.
 
 The system now processes real collision data from a CSV file, demonstrating its ability to handle real-world data. The transactionless caching mechanism, including both in-memory and shared memory caching, is working as expected, as evidenced by the cache hits in the logs.
 
-However, there are some issues with redundant query forwarding that could be addressed to improve the system's efficiency. Overall, the system demonstrates how a distributed query system can be implemented using overlay networks and simple caching mechanisms to efficiently process queries across multiple nodes.
+The system has been improved to address several issues:
+- Redundant query forwarding has been fixed by implementing two levels of cycle prevention.
+- Duplicate records in results have been eliminated by implementing record deduplication.
+- Shared memory caching has been enhanced with better error handling and logging.
+- A testing framework has been added to verify shared memory caching on different platforms.
+
+Overall, the system demonstrates how a distributed query system can be implemented using overlay networks and simple caching mechanisms to efficiently process queries across multiple nodes.

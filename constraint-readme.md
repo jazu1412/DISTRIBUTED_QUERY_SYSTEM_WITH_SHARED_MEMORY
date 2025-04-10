@@ -1,6 +1,6 @@
-# Constraint Analysis for Distributed Query System
+# Constraint Analysis for Distributed Query System with Real Data
 
-This document analyzes how the distributed query system implementation addresses the specified constraints.
+This document analyzes how the distributed query system implementation addresses the specified constraints, with a focus on the real-world data integration and performance.
 
 ## Constraint 1: Two-way Communication Without Request-Response Style
 
@@ -8,9 +8,9 @@ This document analyzes how the distributed query system implementation addresses
 
 **Implementation:**
 
-The system implements this constraint through a forwarding mechanism that avoids the traditional request-response pattern:
+The system implements this constraint through a query propagation mechanism that avoids the traditional request-response pattern:
 
-1. **Query Propagation:**
+1. **Query Propagation Through Overlay:**
    - When node A receives a query from the client, it doesn't directly request data from specific peers.
    - Instead, it forwards the query to its immediate neighbors (in this case, node B).
    - Each node that receives the query:
@@ -33,8 +33,8 @@ The system implements this constraint through a forwarding mechanism that avoids
    ```
    - This allows each node to process queries independently and in parallel.
 
-3. **Independent Data Contribution:**
-   - Each node maintains its own dataset through the `DataManager` class.
+3. **Independent Data Contribution with Real Data:**
+   - Each node maintains its own dataset through the `DataManager` class, which now loads real collision data from the CSV file.
    - When a node receives a query, it filters its local data using `dataMgr_.filterByInjuryRange()`.
    - The filtered local data is combined with results from neighbors.
    - This ensures each node independently contributes its own subset of data.
@@ -50,6 +50,34 @@ The system implements this constraint through a forwarding mechanism that avoids
    ```cpp
    if (nbr.id == sender) continue;
    ```
+
+
+   - **Shared Memory Optimization:**
+     - Nodes on the same machine use shared memory for efficient cache sharing.
+     - The system detects local edges during configuration loading:
+     ```cpp
+     nb.localEdge = (nbrHost == host_);
+     ```
+     - For local edges, shared memory is set up:
+     ```cpp
+     if (nbr.localEdge) {
+         std::string nm = nbr.id < id_ ? ("shm_"+nbr.id+"_"+id_) : ("shm_"+id_+"_"+nbr.id);
+         ShmCache* ptr = (ShmCache*) openOrCreateShm(nm, 1024*1024);
+         localShmMap_[nbr.id] = ptr;
+     }
+     ```
+
+
+**Verification from Logs:**
+From the provided logs, we can see this pattern in action:
+```
+[A] Received query_id: e973c3c1 from sender: client
+[A] Forwarding query e973c3c1 to neighbor B
+[B] Received query_id: e973c3c1 from sender: A
+[B] Forwarding query e973c3c1 to neighbors C and D
+...
+[A] Received response with 73 records from a neighbor
+```
 
 This approach creates a two-way communication pattern that differs from traditional request-response:
 - Instead of A directly requesting data from specific peers, the query propagates through the network.
@@ -128,6 +156,14 @@ The system uses external configuration rather than hard-coded connections:
    ```
    - This approach allows for flexible network topologies without hard-coding.
 
+**Verification from Logs:**
+The logs show that nodes are correctly identifying their neighbors based on the configuration file:
+```
+[A] Forwarding query e973c3c1 to neighbor B
+[B] Forwarding query e973c3c1 to neighbor C
+[B] Forwarding query e973c3c1 to neighbor D
+```
+
 This implementation satisfies the constraint by using an external configuration file to define the network topology, rather than hard-coding connections in the source code.
 
 ## Constraint 3: Overlays and Transactionless Caching
@@ -138,7 +174,7 @@ This implementation satisfies the constraint by using an external configuration 
 
 The system implements both overlay networks and transactionless caching:
 
-1. **Overlay Network:**
+1. **Overlay Network with Real Data:**
    - The system creates a logical network topology on top of the physical network.
    - Nodes are connected according to the edges defined in the configuration.
    - The overlay is implemented through gRPC connections between nodes.
@@ -149,6 +185,7 @@ The system implements both overlay networks and transactionless caching:
           D -- E
      ```
    - This overlay structure allows for flexible routing and data aggregation.
+   - Each node now processes real collision data from the CSV file, demonstrating the overlay's ability to handle real-world data.
 
 2. **Transactionless Caching:**
    - The system implements caching without traditional transaction semantics:
@@ -178,7 +215,7 @@ The system implements both overlay networks and transactionless caching:
      };
      ```
 
-3. **Cache Operations:**
+3. **Cache Operations with Real Data:**
    - **Cache Checking:**
      ```cpp
      bool Node::checkCache(const QueryRequest& req, QueryResponse* out) {
@@ -203,20 +240,12 @@ The system implements both overlay networks and transactionless caching:
      }
      ```
 
-   - **Shared Memory Optimization:**
-     - Nodes on the same machine use shared memory for efficient cache sharing.
-     - The system detects local edges during configuration loading:
-     ```cpp
-     nb.localEdge = (nbrHost == host_);
-     ```
-     - For local edges, shared memory is set up:
-     ```cpp
-     if (nbr.localEdge) {
-         std::string nm = nbr.id < id_ ? ("shm_"+nbr.id+"_"+id_) : ("shm_"+id_+"_"+nbr.id);
-         ShmCache* ptr = (ShmCache*) openOrCreateShm(nm, 1024*1024);
-         localShmMap_[nbr.id] = ptr;
-     }
-     ```
+**Verification from Logs:**
+The logs show that both in-memory and shared memory caching are working:
+```
+[B] SHM cache hit for e973c3c1 from A  // Shared memory cache hit
+[B] in-mem cache hit for e973c3c1      // In-memory cache hit
+```
 
 This implementation satisfies the constraint by exploring overlay networks for distributed query processing and implementing transactionless caching through both in-memory and shared memory mechanisms.
 
@@ -228,13 +257,14 @@ This implementation satisfies the constraint by exploring overlay networks for d
 
 The system focuses on overlay networks with cache coherency as a supporting feature:
 
-1. **Overlay Network Implementation:**
+1. **Overlay Network Implementation with Real Data:**
    - The overlay network is the primary focus of the implementation.
    - It defines how nodes are connected and how queries propagate through the network.
    - The overlay structure determines:
      - How queries flow through the network
      - How results are aggregated
      - The efficiency of the overall system
+   - The system now processes real collision data, demonstrating the overlay's ability to handle real-world data.
 
 2. **Cache Coherency Approach:**
    - The system uses a simplified approach to cache coherency:
@@ -262,7 +292,7 @@ The system focuses on overlay networks with cache coherency as a supporting feat
      ```
      - This ensures that only complete cache entries are read.
 
-3. **Dependency Relationship:**
+3. **Dependency Relationship with Real Data:**
    - The overlay network depends on cache coherency for efficient operation:
      - Without caching, every query would need to traverse the entire network
      - With caching, repeated queries can be answered immediately
@@ -273,7 +303,53 @@ The system focuses on overlay networks with cache coherency as a supporting feat
      - Minimizing network traffic
      - Improving response times for repeated queries
 
+**Verification from Logs:**
+The logs show that the cache coherency mechanism is working, as evidenced by the cache hits:
+```
+[B] SHM cache hit for e973c3c1 from A
+[B] in-mem cache hit for e973c3c1
+```
+
 This implementation satisfies the constraint by focusing on the overlay network implementation while using cache coherency as a supporting feature that enhances the efficiency of the overlay.
+
+## Issues and Observations
+
+While the system successfully addresses the constraints, there are some issues and observations worth noting:
+
+1. **Redundant Query Forwarding:**
+   - The logs show redundant query forwarding between nodes:
+   ```
+   [C] Forwarding query e973c3c1 to neighbor E
+   [C] Received query_id: e973c3c1 from sender: E
+   [C] Forwarding query e973c3c1 to neighbor B
+   [C] Received query_id: e973c3c1 from sender: B
+   [C] Forwarding query e973c3c1 to neighbor E
+   ```
+   - This suggests that the loop prevention mechanism based on `sender_id` is not fully effective.
+   - The issue might be that a node only avoids forwarding back to the immediate sender, but not to nodes it has already forwarded to.
+   - A more robust solution would be to track all nodes that have already seen a query.
+
+2. **Shared Memory Size Limitations:**
+   - During development, there were issues with shared memory size limitations:
+   ```
+   [B] Not enough shm space for cache
+   ```
+   - This was addressed by adjusting the shared memory buffer size, but it highlights a limitation of the current approach.
+   - A more scalable solution might involve chunking large responses or using a more sophisticated shared memory management strategy.
+
+3. **Real Data Integration:**
+   - The system now successfully processes real collision data from the CSV file.
+   - The `DataManager` class was modified to:
+     - Parse CSV data with proper handling of quoted fields
+     - Extract relevant fields like borough and injury count
+     - Store additional information in the `other_fields` property
+   - This demonstrates the system's ability to handle real-world data.
+
+4. **Performance Considerations:**
+   - With real data, the system loads up to 50,000 records per node.
+   - This large dataset tests the system's performance and scalability.
+   - The transactionless caching mechanism helps improve performance for repeated queries.
+   - However, the redundant query forwarding issue could impact performance in a larger network.
 
 ## Summary
 
@@ -287,4 +363,6 @@ The distributed query system successfully addresses all four constraints:
 
 4. It focuses on the overlay network implementation with cache coherency as a supporting feature.
 
-The system demonstrates how a distributed query system can be implemented using overlay networks and simple caching mechanisms to efficiently process queries across multiple nodes.
+The system now processes real collision data from a CSV file, demonstrating its ability to handle real-world data. The transactionless caching mechanism, including both in-memory and shared memory caching, is working as expected, as evidenced by the cache hits in the logs.
+
+However, there are some issues with redundant query forwarding that could be addressed to improve the system's efficiency. Overall, the system demonstrates how a distributed query system can be implemented using overlay networks and simple caching mechanisms to efficiently process queries across multiple nodes.

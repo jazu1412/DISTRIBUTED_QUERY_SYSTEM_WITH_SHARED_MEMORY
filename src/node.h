@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 
 #include <grpcpp/grpcpp.h>
@@ -34,6 +35,9 @@ private:
 
     std::unordered_map<std::string, basecamp::QueryResponse> cache_;
     std::unordered_map<std::string, ShmCache*> localShmMap_;
+    
+    // Track which queries have been forwarded to which neighbors to avoid redundant forwarding
+    std::unordered_map<std::string, std::unordered_set<std::string>> forwardedQueries_;
 
     void loadConfig(const std::string& file);
     bool checkCache(const basecamp::QueryRequest& req, basecamp::QueryResponse* out);

@@ -143,8 +143,17 @@ void Node::forwardQuery(const QueryRequest& req,
                         std::vector<QueryResponse>& results,
                         const std::string& sender) {
     std::vector<std::future<QueryResponse>> futs;
+    
+    // Get or create the set of neighbors this query has been forwarded to
+    auto& forwardedTo = forwardedQueries_[req.query_id()];
+    
     for (auto& nbr : neighbors_) {
-        if (nbr.id == sender) continue;
+        // Skip the sender and nodes we've already forwarded this query to
+        if (nbr.id == sender || forwardedTo.find(nbr.id) != forwardedTo.end()) continue;
+        
+        // Mark this neighbor as having received this query
+        forwardedTo.insert(nbr.id);
+        
         std::cout << "[" << id_ << "] Forwarding query " << req.query_id() << " to neighbor " << nbr.id << std::endl;
         futs.push_back(std::async(std::launch::async, [&, req]() {
             QueryRequest subReq = req;
@@ -159,6 +168,7 @@ void Node::forwardQuery(const QueryRequest& req,
             return nresp;
         }));
     }
+    
     for (auto& f : futs) {
         auto r = f.get();
         std::cout << "[" << id_ << "] Received response with " << r.records_size() << " records from a neighbor" << std::endl;

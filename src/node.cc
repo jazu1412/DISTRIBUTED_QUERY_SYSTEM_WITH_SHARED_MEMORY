@@ -14,7 +14,7 @@ using grpc::ServerContext;
 using grpc::Status;
 
 Node::Node(const std::string& nodeId, const std::string& configFile, bool useSharedMemory)
- : id_(nodeId), dataMgr_(nodeId), useSharedMemory_(useSharedMemory) // Pass node ID to DataManager and store useSharedMemory flag
+ : id_(nodeId), dataMgr_(nodeId), useSharedMemory_(useSharedMemory) 
 {
     std::cout << getElapsedTime() << " [" << id_ << "] Initializing node with shared memory " 
               << (useSharedMemory_ ? "enabled" : "disabled") << std::endl;
@@ -22,7 +22,7 @@ Node::Node(const std::string& nodeId, const std::string& configFile, bool useSha
     loadConfig(configFile);
     
     auto startLoad = std::chrono::steady_clock::now();
-    dataMgr_.loadAll(); // load entire dataset for demonstration
+    dataMgr_.loadAll();
     auto endLoad = std::chrono::steady_clock::now();
     auto loadTime = std::chrono::duration_cast<std::chrono::milliseconds>(endLoad - startLoad).count();
     std::cout << getElapsedTime() << " [" << id_ << "] Loaded data in " << loadTime << "ms" << std::endl;
@@ -32,11 +32,11 @@ Node::Node(const std::string& nodeId, const std::string& configFile, bool useSha
         auto channel = grpc::CreateChannel(nbr.address, grpc::InsecureChannelCredentials());
         nbr.stub = QueryService::NewStub(channel);
         
-        // Only set up shared memory if it's enabled
+       
         if (useSharedMemory_ && nbr.localEdge) {
-            // define a stable name
+           
             std::string nm = nbr.id < id_ ? ("shm_"+nbr.id+"_"+id_) : ("shm_"+id_+"_"+nbr.id);
-            // Use 1MB as the shared memory size
+          
             ShmCache* ptr = (ShmCache*) openOrCreateShm(nm, 1024*1024);
             if (!ptr) {
                 std::cerr << getElapsedTime() << " [" << id_ << "] Failed to create shared memory with " << nbr.id << std::endl;
@@ -52,7 +52,7 @@ void Node::loadConfig(const std::string& file) {
     std::ifstream f(file);
     json j;
     f >> j;
-    // find my host/port
+ 
     bool found = false;
     for (auto& nd : j["nodes"]) {
         if (nd["id"].get<std::string>() == id_) {
@@ -73,7 +73,7 @@ void Node::loadConfig(const std::string& file) {
         std::string e2 = edge[1].get<std::string>();
         if (e1 == id_ || e2 == id_) {
             std::string nbrId = (e1 == id_) ? e2 : e1;
-            // find that node
+         
             std::string nbrHost;
             int nbrPort=0;
             for (auto& nd : j["nodes"]) {
@@ -113,21 +113,21 @@ bool Node::checkCache(const QueryRequest& req, QueryResponse* out) {
             std::string neighborId = kv.first;
             ShmCache* shm = kv.second;
             
-            // Skip invalid shared memory segments
+           
             if (!shm) {
                 continue;
             }
             
-            // Skip segments that are being updated
+            
             if (!shm->ready) {
                 continue;
             }
             
-            // Check if this segment has the query we're looking for
+           
             std::string cachedQueryId(shm->query_id);
             if (queryId == cachedQueryId) {
                 try {
-                    // Parse the serialized response
+                  
                     std::string raw((char*)shm->data, shm->data_size);
                     QueryResponse tmp;
                     if (!tmp.ParseFromString(raw)) {
@@ -136,9 +136,9 @@ bool Node::checkCache(const QueryRequest& req, QueryResponse* out) {
                         continue;
                     }
                     
-                    // Copy the response and update in-memory cache
+                   
                     *out = tmp;
-                    cache_[queryId] = tmp;
+                 
                     
                     auto endTime = std::chrono::steady_clock::now();
                     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
@@ -154,7 +154,7 @@ bool Node::checkCache(const QueryRequest& req, QueryResponse* out) {
         }
     }
 
-    // Not found in any cache
+   
     auto endTime = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
     std::cout << getElapsedTime() << " [" << id_ << "] Cache miss for " << queryId 
@@ -166,8 +166,7 @@ void Node::updateCache(const QueryRequest& req, const QueryResponse& r) {
     auto startTime = std::chrono::steady_clock::now();
     std::string queryId = req.query_id();
     
-    // Update in-memory cache
-    cache_[queryId] = r;
+ 
     
     // Also store in shared memory if enabled and we have local neighbors
     if (useSharedMemory_) {
@@ -175,14 +174,14 @@ void Node::updateCache(const QueryRequest& req, const QueryResponse& r) {
             ShmCache* shm = kv.second;
             if (!shm) continue;
             
-            // Set ready to false while updating
+          
             shm->ready = false;
             
-            // Clear and set the query ID
+           
             memset(shm->query_id, 0, sizeof(shm->query_id));
             strncpy(shm->query_id, queryId.c_str(), sizeof(shm->query_id)-1);
             
-            // Serialize the response
+            
             auto ser = r.SerializeAsString();
             
             // Check if it fits in the shared memory buffer
@@ -193,11 +192,11 @@ void Node::updateCache(const QueryRequest& req, const QueryResponse& r) {
                 continue;
             }
             
-            // Copy the serialized data to shared memory
+            
             memcpy(shm->data, ser.data(), ser.size());
             shm->data_size = ser.size();
             
-            // Mark as ready for reading
+        
             shm->ready = true;
             
             auto endTime = std::chrono::steady_clock::now();
@@ -214,7 +213,7 @@ void Node::updateCache(const QueryRequest& req, const QueryResponse& r) {
     }
 }
 
-// *** IMPORTANT CODE POINT FOR FORWARDING AND GATHERING
+// ***  FORWARDING AND GATHERING *****
 void Node::forwardQuery(const QueryRequest& req,
                         std::vector<QueryResponse>& results,
                         const std::string& sender) {
@@ -222,25 +221,25 @@ void Node::forwardQuery(const QueryRequest& req,
     std::string queryId = req.query_id();
     std::vector<std::future<QueryResponse>> futs;
     
-    // Get or create the set of neighbors this query has been forwarded to
-    auto& forwardedTo = forwardedQueries_[queryId];
     
-    // Count how many neighbors we're forwarding to
+    auto& forwardedTo = forwardedQueries_[queryId]; // set of neighbors this query has been forwarded to
+    
+    // Counting how many neighbors we're forwarding to
     int forwardCount = 0;
     int shmHitCount = 0;
     
     for (auto& nbr : neighbors_) {
-        // Skip the sender and nodes we've already forwarded this query to
-        if (nbr.id == sender || forwardedTo.find(nbr.id) != forwardedTo.end()) continue;
+      
+        if (nbr.id == sender || forwardedTo.find(nbr.id) != forwardedTo.end()) continue;   // Skip the sender and nodes we've already forwarded this query to
         
-        // NEW: Check if this neighbor has the result in shared memory
+        //  Check if this neighbor has the result in shared memory
         if (useSharedMemory_ && nbr.localEdge) {
-            // Find the shared memory segment for this neighbor
-            auto it = localShmMap_.find(nbr.id);
+           
+            auto it = localShmMap_.find(nbr.id);  // Find the shared memory segment for this neighbor
             if (it != localShmMap_.end()) {
                 ShmCache* shm = it->second;
                 
-                // Skip invalid shared memory segments
+               
                 if (!shm) {
                     std::cout << getElapsedTime() << " [" << id_ << "] Shared memory with " 
                               << nbr.id << " is null" << std::endl;
@@ -248,11 +247,11 @@ void Node::forwardQuery(const QueryRequest& req,
                     std::cout << getElapsedTime() << " [" << id_ << "] Shared memory with " 
                               << nbr.id << " is not ready" << std::endl;
                 } else {
-                    // Check if this segment has the query we're looking for
+                   
                     std::string cachedQueryId(shm->query_id);
                     if (queryId == cachedQueryId) {
                         try {
-                            // Parse the serialized response
+                            
                             std::string raw((char*)shm->data, shm->data_size);
                             QueryResponse tmp;
                             if (tmp.ParseFromString(raw)) {
@@ -260,10 +259,10 @@ void Node::forwardQuery(const QueryRequest& req,
                                           << queryId << " in shared memory with " << nbr.id 
                                           << ", skipping forwarding" << std::endl;
                                 
-                                // Add the response to results and skip forwarding
+                                // So we are adding the response to results and skipping forwarding
                                 results.push_back(tmp);
                                 
-                                // Mark this neighbor as having received this query
+                                // Marking this neighbor as having received this query
                                 forwardedTo.insert(nbr.id);
                                 shmHitCount++;
                                 continue;
@@ -280,7 +279,7 @@ void Node::forwardQuery(const QueryRequest& req,
             }
         }
         
-        // Mark this neighbor as having received this query
+        
         forwardedTo.insert(nbr.id);
         forwardCount++;
         
@@ -290,7 +289,7 @@ void Node::forwardQuery(const QueryRequest& req,
         // Capture nbr by reference to avoid copying the unique_ptr
         futs.push_back(std::async(std::launch::async, [&, req]() {
             auto rpcStartTime = std::chrono::steady_clock::now();
-            std::string nbrId = nbr.id; // Store the ID for logging
+            std::string nbrId = nbr.id; 
             
             QueryRequest subReq = req;
             subReq.set_sender_id(id_);
@@ -350,11 +349,11 @@ Status Node::QueryByInjuryRange(ServerContext* ctx,
     std::cout << getElapsedTime() << " [" << id_ << "] Received query_id: " << queryId  
               << " from sender: " << req->sender_id() << std::endl;
 
-    // Check if we've already processed this query (to break cycles)
+    // Check if we've already processed this query 
     static std::unordered_set<std::string> processedQueries;
     bool alreadyProcessed = processedQueries.find(queryId) != processedQueries.end();
 
-    // 1. check cache
+  
     auto cacheStartTime = std::chrono::steady_clock::now();
     bool cacheHit = checkCache(*req, resp);
     auto cacheEndTime = std::chrono::steady_clock::now();
@@ -368,19 +367,18 @@ Status Node::QueryByInjuryRange(ServerContext* ctx,
         return Status::OK;
     }
 
-    // If we've already processed this query, just return what we have in cache
-    // This shouldn't happen now that we have proper caching, but it's a safeguard
+    
     if (alreadyProcessed) {
         std::cout << getElapsedTime() << " [" << id_ << "] Already processed query " << queryId 
                   << ", skipping redundant processing" << std::endl;
-        // Return an empty response since we don't have it in cache
+      
         return Status::OK;
     }
 
-    // Mark this query as processed
+    
     processedQueries.insert(queryId);
 
-    // 2. local filter
+   
     auto filterStartTime = std::chrono::steady_clock::now();
     auto local = dataMgr_.filterByInjuryRange(req->min_injury(), req->max_injury());
     auto filterEndTime = std::chrono::steady_clock::now();
@@ -394,7 +392,7 @@ Status Node::QueryByInjuryRange(ServerContext* ctx,
         p->CopyFrom(r);
     }
 
-    // 3. forward to neighbors, skipping sender
+   
     auto forwardStartTime = std::chrono::steady_clock::now();
     std::vector<QueryResponse> neighborRes;
     forwardQuery(*req, neighborRes, req->sender_id());
@@ -403,28 +401,28 @@ Status Node::QueryByInjuryRange(ServerContext* ctx,
     std::cout << getElapsedTime() << " [" << id_ << "] Query forwarding completed in " 
               << forwardDuration << "µs, received " << neighborRes.size() << " responses" << std::endl;
 
-    // 4. merge with deduplication
+    //  deduplication
     auto mergeStartTime = std::chrono::steady_clock::now();
     std::unordered_set<int> seen_record_ids;
     int totalNeighborRecords = 0;
     int duplicateRecords = 0;
     
-    // First add local records and track their IDs
+   
     for (auto& r : local) {
         seen_record_ids.insert(r.record_id());
     }
     
-    // Then add records from neighbors, skipping duplicates
+   
     for (auto& nr : neighborRes) {
         totalNeighborRecords += nr.records_size();
         for (auto& rr : nr.records()) {
-            // Skip if we've already seen this record ID
+           
             if (seen_record_ids.find(rr.record_id()) != seen_record_ids.end()) {
                 duplicateRecords++;
                 continue;
             }
             
-            // Add the record and mark it as seen
+           
             seen_record_ids.insert(rr.record_id());
             auto p = combined.add_records();
             p->CopyFrom(rr);
@@ -437,7 +435,7 @@ Status Node::QueryByInjuryRange(ServerContext* ctx,
               << "µs, " << totalNeighborRecords << " neighbor records, " 
               << duplicateRecords << " duplicates removed" << std::endl;
 
-    // 5. cache
+ 
     auto cacheUpdateStartTime = std::chrono::steady_clock::now();
     updateCache(*req, combined);
     auto cacheUpdateEndTime = std::chrono::steady_clock::now();

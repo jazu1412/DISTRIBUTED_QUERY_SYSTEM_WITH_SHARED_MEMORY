@@ -1,42 +1,41 @@
-# Build directories
+
 build/
 out/
 cmake-build-*/
 
-# Generated files
+
 *.pb.cc
 *.pb.h
 *.grpc.pb.cc
 *.grpc.pb.h
 
-# Compiled Object files
+
 *.slo
 *.lo
 *.o
 *.obj
 
-# Precompiled Headers
 *.gch
 *.pch
 
-# Compiled Dynamic libraries
+
 *.so
 *.dylib
 *.dll
 
-# Compiled Static libraries
+
 *.lai
 *.la
 *.a
 *.lib
 
-# Executables
+
 *.exe
 *.out
 *.app
 basecamp_node
 
-# CMake
+
 CMakeCache.txt
 CMakeFiles/
 CMakeScripts/
@@ -47,14 +46,14 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 
-# IDE files
+
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS specific files
+
 .DS_Store
 .DS_Store?
 ._*
@@ -63,9 +62,9 @@ CTestTestfile.cmake
 ehthumbs.db
 Thumbs.db
 
-# Dependency directories
+
 vcpkg/
 conan/
 
-# Shared memory files
+
 /dev/shm/

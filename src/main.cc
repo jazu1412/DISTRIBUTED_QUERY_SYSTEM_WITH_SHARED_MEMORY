@@ -3,10 +3,10 @@
 #include <chrono>
 #include "node.h"
 
-// Add a global start time for timing measurements
+// Add a global start time for timing metrics
 std::chrono::steady_clock::time_point g_startTime = std::chrono::steady_clock::now();
 
-// Function to get elapsed time since program start
+
 std::string getElapsedTime() {
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - g_startTime).count();
@@ -16,25 +16,25 @@ std::string getElapsedTime() {
 int main(int argc, char** argv) {
     if (argc < 3) {
         std::cerr << "Usage: ./basecamp_node <NodeID> <overlay.json path> [--no-shm]\n";
-        std::cerr << "  --no-shm: Disable shared memory caching (use only gRPC)\n";
+        std::cerr << "  --no-shm: Disable shared memory caching ( only gRPC)\n";
         return 1;
     }
     
     std::string nodeId = argv[1];
     std::string configPath = argv[2];
     
-    // Check for --no-shm flag
+  
     bool useSharedMemory = true;
     for (int i = 3; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--no-shm") {
             useSharedMemory = false;
-            std::cout << "Shared memory caching disabled. Using only gRPC." << std::endl;
+            std::cout << "Shared memory caching disabled. only gRPC." << std::endl;
         }
     }
 
     try {
-        // Initialize the node with the shared memory flag
+       
         Node node(nodeId, configPath, useSharedMemory);
         node.startServer();
     } catch (const std::exception& e) {

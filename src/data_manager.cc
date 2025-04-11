@@ -5,18 +5,18 @@
 #include <string>
 #include <functional>
 
-// Constructor
+
 DataManager::DataManager(const std::string& nodeId) : nodeId_(nodeId) {
-    // Initialize with the node ID
+   
 }
 
-// Helper method to split CSV line into tokens
+
 std::vector<std::string> DataManager::splitCSVLine(const std::string& line) {
     std::vector<std::string> tokens;
     std::stringstream ss(line);
     std::string token;
     
-    // Handle quoted fields with commas inside them
+  
     bool inQuotes = false;
     std::string field;
     
@@ -31,13 +31,13 @@ std::vector<std::string> DataManager::splitCSVLine(const std::string& line) {
         }
     }
     
-    // Add the last field
+  
     tokens.push_back(field);
     
     return tokens;
 }
 
-// Helper method to parse integer with default value
+
 int DataManager::parseIntWithDefault(const std::string& str, int defaultValue) {
     try {
         if (str.empty()) return defaultValue;
@@ -64,7 +64,7 @@ void DataManager::loadAll() {
     }
     
     std::string line;
-    // Skip header line
+   
     std::getline(file, line);
     
     int recordId = 0;
@@ -74,20 +74,20 @@ void DataManager::loadAll() {
     while (std::getline(file, line) && loadedRecords < maxRecords) {
         auto tokens = splitCSVLine(line);
         
-        // Check if we have enough tokens
+      
         if (tokens.size() < 18) continue; // Need at least up to NUMBER_OF_MOTORIST_KILLED
         
         basecamp::Record r;
         r.set_record_id(recordId++);
         
-        // Set borough (index 2)
+       
         if (tokens.size() > 2 && !tokens[2].empty()) {
             r.set_borough(tokens[2]);
         } else {
             r.set_borough("UNKNOWN");
         }
         
-        // Set injury count (index 10 - NUMBER OF PERSONS INJURED)
+       
         int injuryCount = parseIntWithDefault(tokens[10], 0);
         r.set_injury_count(injuryCount);
         

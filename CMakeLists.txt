@@ -1,35 +1,56 @@
 cmake_minimum_required(VERSION 3.14)
 # Disable OpenMP
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-command-line-argument")
+
+string(REPLACE "-fopenmp" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 project(Mini2BasecampAltOverlay CXX)
 
-# Use C++17
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find packages
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GRPC REQUIRED grpc++)
 pkg_check_modules(PROTOBUF REQUIRED protobuf)
 
 find_package(nlohmann_json CONFIG REQUIRED)
-find_package(absl CONFIG REQUIRED)   # Use CMake config for Abseil
+find_package(absl CONFIG REQUIRED)  
 
-# Include directories
+
 include_directories(
     ${GRPC_INCLUDE_DIRS}
     ${PROTOBUF_INCLUDE_DIRS}
-    ${CMAKE_CURRENT_BINARY_DIR}  # location of generated *.pb.h
+    ${CMAKE_CURRENT_BINARY_DIR} 
     include
 )
 
-# Link directories
+
 link_directories(
     ${GRPC_LIBRARY_DIRS}
     ${PROTOBUF_LIBRARY_DIRS}
 )
 
-# Add executable
+
+find_program(PROTOC protoc REQUIRED)
+find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
+
+
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/basecamp.pb.cc
+           ${CMAKE_CURRENT_BINARY_DIR}/basecamp.pb.h
+           ${CMAKE_CURRENT_BINARY_DIR}/basecamp.grpc.pb.cc
+           ${CMAKE_CURRENT_BINARY_DIR}/basecamp.grpc.pb.h
+    COMMAND ${PROTOC}
+    ARGS -I=${CMAKE_CURRENT_SOURCE_DIR}/proto
+         --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
+         --grpc_out=${CMAKE_CURRENT_BINARY_DIR}
+         --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN}
+         ${CMAKE_CURRENT_SOURCE_DIR}/proto/basecamp.proto
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/proto/basecamp.proto
+    COMMENT "Generating protobuf and gRPC files"
+)
+
 add_executable(basecamp_node
     src/main.cc
     src/node.cc
@@ -45,13 +66,13 @@ target_link_libraries(basecamp_node
     ${PROTOBUF_LIBRARIES}
     nlohmann_json::nlohmann_json
 
-    # core abseil libs:
+  
     absl::base
     absl::strings
     absl::time
     absl::synchronization
 
-    # logging + debugging used by recent gRPC/Protobuf
+   
     absl::log
     absl::cord
     absl::symbolize
@@ -59,22 +80,21 @@ target_link_libraries(basecamp_node
     absl::debugging
 )
 
-# Filter out OpenMP flags from CFLAGS_OTHER
-set(FILTERED_GRPC_CFLAGS)
+
+set(FILTERED_GRPC_CFLAGS "")
 foreach(FLAG ${GRPC_CFLAGS_OTHER})
-    if(NOT "${FLAG}" MATCHES "-fopenmp")
+    if(NOT "${FLAG}" STREQUAL "-fopenmp")
         list(APPEND FILTERED_GRPC_CFLAGS ${FLAG})
     endif()
 endforeach()
 
-set(FILTERED_PROTOBUF_CFLAGS)
+set(FILTERED_PROTOBUF_CFLAGS "")
 foreach(FLAG ${PROTOBUF_CFLAGS_OTHER})
-    if(NOT "${FLAG}" MATCHES "-fopenmp")
+    if(NOT "${FLAG}" STREQUAL "-fopenmp")
         list(APPEND FILTERED_PROTOBUF_CFLAGS ${FLAG})
     endif()
 endforeach()
 
-# Add compile options without OpenMP
 target_compile_options(basecamp_node PRIVATE
     ${FILTERED_GRPC_CFLAGS}
     ${FILTERED_PROTOBUF_CFLAGS}

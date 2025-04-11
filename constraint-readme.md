@@ -84,6 +84,94 @@ This approach creates a two-way communication pattern that differs from traditio
 - Each node contributes data independently without being directly requested.
 - Results flow back through the network to node A, which aggregates them for the client.
 
+### Results Gathering Process
+
+The results gathering process is implemented in the `QueryByInjuryRange` method in `node.cc`:
+
+1. **Local Data Processing**:
+   ```cpp
+   // 2. local filter
+   auto local = dataMgr_.filterByInjuryRange(req->min_injury(), req->max_injury());
+   QueryResponse combined;
+   for (auto& r : local) {
+       auto p = combined.add_records();
+       p->CopyFrom(r);
+   }
+   ```
+   Each node first processes its local data subset based on the query criteria.
+
+2. **Query Forwarding and Asynchronous Result Collection**:
+   ```cpp
+   // 3. forward to neighbors, skipping sender
+   std::vector<QueryResponse> neighborRes;
+   forwardQuery(*req, neighborRes, req->sender_id());
+   ```
+   The query is forwarded to neighbors, and results are collected asynchronously.
+
+3. **Asynchronous Execution in forwardQuery**:
+   ```cpp
+   futs.push_back(std::async(std::launch::async, [&, req]() {
+       QueryRequest subReq = req;
+       subReq.set_sender_id(id_);
+       QueryResponse nresp;
+       grpc::ClientContext ctx;
+       auto st = nbr.stub->QueryByInjuryRange(&ctx, subReq, &nresp);
+       // ...
+       return nresp;
+   }));
+   
+   // Wait for all responses
+   for (auto& f : futs) {
+       auto r = f.get();
+       results.push_back(r);
+   }
+   ```
+   Each neighbor query is executed in parallel, and the node waits for all responses.
+
+4. **Result Merging with Deduplication**:
+   ```cpp
+   // 4. merge with deduplication
+   std::unordered_set<int> seen_record_ids;
+   
+   // First add local records and track their IDs
+   for (auto& r : local) {
+       seen_record_ids.insert(r.record_id());
+   }
+   
+   // Then add records from neighbors, skipping duplicates
+   for (auto& nr : neighborRes) {
+       for (auto& rr : nr.records()) {
+           // Skip if we've already seen this record ID
+           if (seen_record_ids.find(rr.record_id()) != seen_record_ids.end()) {
+               continue;
+           }
+           
+           // Add the record and mark it as seen
+           seen_record_ids.insert(rr.record_id());
+           auto p = combined.add_records();
+           p->CopyFrom(rr);
+       }
+   }
+   ```
+   Results from all neighbors are merged with local results, with deduplication to avoid duplicate records.
+
+5. **Returning Combined Results**:
+   ```cpp
+   *resp = combined;
+   return Status::OK;
+   ```
+   The combined results are returned to the caller.
+
+This recursive process ensures that:
+- Node A receives the query from the client and processes it
+- Node A forwards the query to its neighbors (e.g., Node B)
+- Node B processes the query locally and forwards it to its neighbors (e.g., Nodes C and D)
+- Nodes C and D process the query locally and forward it to their neighbors (e.g., Node E)
+- Node E processes the query locally
+- Results flow back up the chain: E → C/D → B → A → Client
+- Each node combines its local results with results from its neighbors before passing them up
+- The client ultimately receives a complete, deduplicated set of results from all nodes through Node A
+
 ## Constraint 2: No Hard-Coded Connections
 
 **Constraint:** It is not intended for this mini to have processes discover each other dynamically. Rather a mapping can exist that provides guidance to each process' edges (connections). This however, should not be hard coded within the code.
@@ -522,6 +610,113 @@ To compare performance with and without shared memory caching:
 
 This procedure allows measuring the performance impact of shared memory caching versus using only gRPC communication.
 
+## Data Partitioning Implementation
+
+To ensure that each node processes only a different subset of data (even though it has access to the full dataset), a data partitioning mechanism has been implemented:
+
+1. **Node-Specific Data Filtering:**
+   - The `DataManager` class now takes a node ID in its constructor.
+   - Each node filters the data based on its ID, ensuring it only processes its assigned subset.
+   - This simulates a distributed system where each node is responsible for a different part of the data.
+
+2. **Partitioning Strategy:**
+   - Records are partitioned based on their record_id using a modulo operation:
+     ```cpp
+     // Different distribution strategies based on node ID
+     if (nodeId_ == "A") {
+         // Node A gets records where record_id % 5 == 0
+         return record.record_id() % 5 == 0;
+     } else if (nodeId_ == "B") {
+         // Node B gets records where record_id % 5 == 1
+         return record.record_id() % 5 == 1;
+     } // ... and so on for nodes C, D, and E
+     ```
+   - This ensures an even distribution of records across nodes.
+   - Each node processes approximately 20% of the total records.
+
+3. **Implementation Details:**
+   - The `isRecordInNodeSubset` method in `DataManager` determines if a record belongs to a node's subset.
+   - The `filterByInjuryRange` method has been updated to only return records that both match the injury range AND belong to the node's subset.
+   - The Node constructor passes its ID to the DataManager to enable this filtering.
+
+4. **Verification:**
+   - Each node logs how many records it filtered from the total dataset:
+     ```
+     [A] Filtered 12345 records from 100000 total records (injury range: 10-11)
+     ```
+   - This allows verifying that each node is processing a different subset of data.
+
+This implementation ensures that even though each node has access to the full dataset (for simplicity and demonstration purposes), it only processes and contributes its assigned subset to the query results. This simulates a real distributed system where data is partitioned across nodes.
+
+## Project Directory Structure
+
+```
+MINI-2-CODE/
+├── .gitignore                      # Git ignore file
+├── CMakeLists.txt                  # CMake build configuration
+├── Motor_Vehicle_Collisions_-_Crashes_20250212.csv  # Real collision data
+├── README.md                       # Project overview and instructions
+├── constraint-readme.md            # Detailed analysis of constraints (this file)
+├── mac_setup.md                    # Setup instructions for macOS
+├── slide_readme.md                 # Explanation of SHM optimization for gRPC
+├── shm_optimization.md             # Detailed SHM pre-forwarding optimization
+├── windows_setup.md                # Setup instructions for Windows
+├── build/                          # Build output directory
+├── config/                         # Configuration files
+│   └── overlay.json                # Network topology configuration
+├── proto/                          # Protocol Buffer definitions
+│   └── basecamp.proto              # gRPC service and message definitions
+├── python/                         # Python client code
+│   ├── basecamp_pb2.py             # Generated Protocol Buffer code
+│   ├── basecamp_pb2_grpc.py        # Generated gRPC code
+│   └── client.py                   # Python client implementation
+├── scripts/                        # Utility scripts
+│   └── build_proto.sh              # Script to generate Protocol Buffer code
+└── src/                            # C++ source code
+    ├── data_manager.cc             # Data management implementation
+    ├── data_manager.h              # Data management interface
+    ├── main.cc                     # Main entry point
+    ├── node.cc                     # Node implementation
+    ├── node.h                      # Node interface
+    ├── shm_utils.cc                # Shared memory utilities implementation
+    └── shm_utils.h                 # Shared memory utilities interface
+```
+
+### Key Components
+
+1. **Protocol Buffers and gRPC (proto/)**
+   - `basecamp.proto`: Defines the service interface and message types using Protocol Buffers
+   - Generated code in `python/` provides client-side bindings
+
+2. **Network Configuration (config/)**
+   - `overlay.json`: Defines the network topology, including nodes and their connections
+
+3. **Core Implementation (src/)**
+   - `node.h/cc`: Implements the distributed node with query processing, forwarding, and caching
+   - `data_manager.h/cc`: Manages data loading, filtering, and partitioning
+   - `shm_utils.h/cc`: Provides shared memory utilities for inter-process communication
+   - `main.cc`: Entry point that parses command-line arguments and starts the node
+
+4. **Client Implementation (python/)**
+   - `client.py`: Python client that sends queries to the distributed system
+
+5. **Data**
+   - `Motor_Vehicle_Collisions_-_Crashes_20250212.csv`: Real collision data used by the system
+
+### Build System
+
+The project uses CMake for building:
+- `CMakeLists.txt`: Defines build targets, dependencies, and compiler flags
+- `scripts/build_proto.sh`: Generates Protocol Buffer and gRPC code
+
+### Documentation
+
+- `README.md`: Overview and basic instructions
+- `constraint-readme.md`: Detailed analysis of how the system addresses the constraints
+- `slide_readme.md`: Explanation of how shared memory complements gRPC
+- `shm_optimization.md`: Detailed explanation of the shared memory pre-forwarding optimization
+- `mac_setup.md` and `windows_setup.md`: Platform-specific setup instructions
+
 ## Summary
 
 The distributed query system successfully addresses all four constraints:
@@ -541,5 +736,7 @@ The system has been improved to address several issues:
 - Duplicate records in results have been eliminated by implementing record deduplication.
 - Shared memory caching has been enhanced with better error handling and logging.
 - A testing framework has been added to verify shared memory caching on different platforms.
+- Data partitioning has been implemented to ensure each node processes only its assigned subset of data.
+- Shared memory pre-forwarding optimization has been added to avoid unnecessary query forwarding.
 
 Overall, the system demonstrates how a distributed query system can be implemented using overlay networks and simple caching mechanisms to efficiently process queries across multiple nodes.

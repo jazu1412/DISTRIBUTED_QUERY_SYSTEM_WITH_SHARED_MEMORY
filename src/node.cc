@@ -106,18 +106,8 @@ bool Node::checkCache(const QueryRequest& req, QueryResponse* out) {
     auto startTime = std::chrono::steady_clock::now();
     std::string queryId = req.query_id();
     
-    // // First check in-memory cache (faster)
-    // auto it = cache_.find(queryId);
-    // if (it != cache_.end()) {
-    //     *out = it->second;
-    //     auto endTime = std::chrono::steady_clock::now();
-    //     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
-    //     std::cout << getElapsedTime() << " [" << id_ << "] in-mem cache hit for " << queryId 
-    //               << " (" << duration << "µs)" << std::endl;
-    //     return true;
-    // }
 
-    // Then check shared memory cache if enabled
+    //  check shared memory cache if enabled
     if (useSharedMemory_) {
         for (auto& kv : localShmMap_) {
             std::string neighborId = kv.first;
@@ -224,6 +214,7 @@ void Node::updateCache(const QueryRequest& req, const QueryResponse& r) {
     }
 }
 
+// *** IMPORTANT CODE POINT FOR FORWARDING AND GATHERING
 void Node::forwardQuery(const QueryRequest& req,
                         std::vector<QueryResponse>& results,
                         const std::string& sender) {
@@ -236,10 +227,58 @@ void Node::forwardQuery(const QueryRequest& req,
     
     // Count how many neighbors we're forwarding to
     int forwardCount = 0;
+    int shmHitCount = 0;
     
     for (auto& nbr : neighbors_) {
         // Skip the sender and nodes we've already forwarded this query to
         if (nbr.id == sender || forwardedTo.find(nbr.id) != forwardedTo.end()) continue;
+        
+        // NEW: Check if this neighbor has the result in shared memory
+        if (useSharedMemory_ && nbr.localEdge) {
+            // Find the shared memory segment for this neighbor
+            auto it = localShmMap_.find(nbr.id);
+            if (it != localShmMap_.end()) {
+                ShmCache* shm = it->second;
+                
+                // Skip invalid shared memory segments
+                if (!shm) {
+                    std::cout << getElapsedTime() << " [" << id_ << "] Shared memory with " 
+                              << nbr.id << " is null" << std::endl;
+                } else if (!shm->ready) {
+                    std::cout << getElapsedTime() << " [" << id_ << "] Shared memory with " 
+                              << nbr.id << " is not ready" << std::endl;
+                } else {
+                    // Check if this segment has the query we're looking for
+                    std::string cachedQueryId(shm->query_id);
+                    if (queryId == cachedQueryId) {
+                        try {
+                            // Parse the serialized response
+                            std::string raw((char*)shm->data, shm->data_size);
+                            QueryResponse tmp;
+                            if (tmp.ParseFromString(raw)) {
+                                std::cout << getElapsedTime() << " [" << id_ << "] Found query " 
+                                          << queryId << " in shared memory with " << nbr.id 
+                                          << ", skipping forwarding" << std::endl;
+                                
+                                // Add the response to results and skip forwarding
+                                results.push_back(tmp);
+                                
+                                // Mark this neighbor as having received this query
+                                forwardedTo.insert(nbr.id);
+                                shmHitCount++;
+                                continue;
+                            } else {
+                                std::cerr << getElapsedTime() << " [" << id_ << "] Failed to parse shared memory data from " 
+                                          << nbr.id << std::endl;
+                            }
+                        } catch (const std::exception& e) {
+                            std::cerr << getElapsedTime() << " [" << id_ << "] Exception while parsing shared memory data: " 
+                                    << e.what() << std::endl;
+                        }
+                    }
+                }
+            }
+        }
         
         // Mark this neighbor as having received this query
         forwardedTo.insert(nbr.id);
@@ -285,7 +324,7 @@ void Node::forwardQuery(const QueryRequest& req,
                   << " to " << forwardCount << " neighbors, waiting for responses..." << std::endl;
     }
     
-    // Wait for all responses
+    // Wait for all responses -- **** important code point for GATHERING ****
     for (auto& f : futs) {
         auto r = f.get();
         if (r.records_size() > 0) {
@@ -298,7 +337,9 @@ void Node::forwardQuery(const QueryRequest& req,
     
     std::cout << getElapsedTime() << " [" << id_ << "] All " << forwardCount 
               << " neighbors responded in " << duration << "µs, received " 
-              << results.size() << " non-empty responses" << std::endl;
+              << results.size() << " non-empty responses"
+              << (shmHitCount > 0 ? ", " + std::to_string(shmHitCount) + " from shared memory cache" : "")
+              << std::endl;
 }
 
 Status Node::QueryByInjuryRange(ServerContext* ctx,

@@ -68,7 +68,7 @@ void DataManager::loadAll() {
     std::getline(file, line);
     
     int recordId = 0;
-    int maxRecords = 100000; // Limit the number of records to avoid memory issues
+    int maxRecords = 400000; 
     int loadedRecords = 0;
     
     while (std::getline(file, line) && loadedRecords < maxRecords) {

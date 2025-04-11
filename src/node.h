@@ -17,9 +17,13 @@ struct Neighbor {
     bool localEdge;
 };
 
+// Forward declaration
+std::string getElapsedTime();
+
 class Node final : public basecamp::QueryService::Service {
 public:
-    Node(const std::string& nodeId, const std::string& configFile);
+    // Constructor now takes a useSharedMemory flag
+    Node(const std::string& nodeId, const std::string& configFile, bool useSharedMemory = true);
     void startServer();
 
     ::grpc::Status QueryByInjuryRange(::grpc::ServerContext* ctx,
@@ -32,6 +36,7 @@ private:
     int port_;
     DataManager dataMgr_;
     std::vector<Neighbor> neighbors_;
+    bool useSharedMemory_; // Flag to control whether shared memory caching is used
 
     std::unordered_map<std::string, basecamp::QueryResponse> cache_;
     std::unordered_map<std::string, ShmCache*> localShmMap_;

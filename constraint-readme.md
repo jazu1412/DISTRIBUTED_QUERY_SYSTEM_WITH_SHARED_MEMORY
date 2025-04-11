@@ -418,9 +418,53 @@ While the system successfully addresses the constraints, there are some issues a
    - The transactionless caching mechanism helps improve performance for repeated queries.
    - However, the redundant query forwarding issue could impact performance in a larger network.
 
-## Testing Shared Memory Caching
+## Performance Measurement and Testing
 
-To facilitate testing of the shared memory caching mechanism, the Python client has been enhanced to allow:
+The system has been enhanced with performance measurement capabilities and testing features to evaluate the impact of shared memory caching:
+
+### 1. Disabling Shared Memory Caching
+
+A command-line flag has been added to disable shared memory caching, allowing performance comparison between using shared memory and using only gRPC:
+
+```bash
+# Start node with shared memory caching enabled (default)
+./basecamp_node A config/overlay.json
+
+# Start node with shared memory caching disabled
+./basecamp_node A config/overlay.json --no-shm
+```
+
+This allows running the same queries with and without shared memory caching to measure the performance difference.
+
+### 2. Detailed Timing Logs
+
+Comprehensive timing logs have been added throughout the codebase to measure the performance of each step in the query processing pipeline:
+
+- **Overall query processing time**
+- **Cache checking time** (both in-memory and shared memory)
+- **Local data filtering time**
+- **Query forwarding time** (including individual RPC times)
+- **Result merging and deduplication time**
+- **Cache updating time**
+
+Example log output:
+```
+[1234ms] [A] Received query_id: abc123 from sender: client
+[1235ms] [A] Cache miss for abc123 (45µs)
+[1236ms] [A] Local filtering completed in 320µs, found 15 records
+[1237ms] [A] Forwarded query abc123 to 1 neighbors, waiting for responses...
+[1238ms] [A] RPC to B completed in 5230µs, received 25 records
+[1239ms] [A] All 1 neighbors responded in 5245µs, received 1 non-empty responses
+[1240ms] [A] Merge completed in 120µs, 25 neighbor records, 3 duplicates removed
+[1241ms] [A] Cache update completed in 85µs
+[1242ms] [A] Query completed in 7820µs, returned 37 records
+```
+
+These logs provide detailed insights into where time is spent during query processing, allowing for performance analysis and optimization.
+
+### 3. Enhanced Python Client
+
+The Python client has been enhanced to allow:
 
 1. **Specifying a custom query ID**: This allows sending the same query multiple times to test cache hits.
 2. **Targeting specific nodes**: This allows testing shared memory caching on different machines (e.g., Linux vs. macOS).
@@ -442,33 +486,41 @@ python client.py 10.0.0.16:50053 10 11 abc123
 python client.py 10.0.0.16:50053 10 11 abc123 B
 ```
 
-### Testing Procedure
+### Performance Testing Procedure
 
-To test shared memory caching across different nodes:
+To compare performance with and without shared memory caching:
 
-1. First, send a query to node A with a specific query ID:
+1. Start nodes with shared memory enabled:
+   ```bash
+   ./basecamp_node A config/overlay.json
+   ./basecamp_node B config/overlay.json
+   # ... and so on for other nodes
+   ```
+
+2. Run a query and note the total query time:
    ```bash
    python client.py 10.0.0.35:50051 10 11 test123
    ```
 
-2. Then, send the same query to node B (which is on the same machine as A):
+3. Run the same query again to test cache performance:
    ```bash
-   python client.py 10.0.0.35:50052 10 11 test123
-   ```
-   You should see a shared memory cache hit in the logs.
-
-3. Similarly, to test on Linux, send a query to node C:
-   ```bash
-   python client.py 10.0.0.16:50053 10 11 test456
+   python client.py 10.0.0.35:50051 10 11 test123
    ```
 
-4. Then, send the same query to node E (which is on the same machine as C):
+4. Restart nodes with shared memory disabled:
    ```bash
-   python client.py 10.0.0.16:50055 10 11 test456
+   ./basecamp_node A config/overlay.json --no-shm
+   ./basecamp_node B config/overlay.json --no-shm
+   # ... and so on for other nodes
    ```
-   You should see a shared memory cache hit in the logs.
 
-This testing procedure allows verifying that shared memory caching works correctly on both macOS and Linux platforms.
+5. Run the same queries again and compare the performance:
+   ```bash
+   python client.py 10.0.0.35:50051 10 11 test123
+   python client.py 10.0.0.35:50051 10 11 test123
+   ```
+
+This procedure allows measuring the performance impact of shared memory caching versus using only gRPC communication.
 
 ## Summary
 

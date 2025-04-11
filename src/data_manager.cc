@@ -3,6 +3,12 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <functional>
+
+// Constructor
+DataManager::DataManager(const std::string& nodeId) : nodeId_(nodeId) {
+    // Initialize with the node ID
+}
 
 // Helper method to split CSV line into tokens
 std::vector<std::string> DataManager::splitCSVLine(const std::string& line) {

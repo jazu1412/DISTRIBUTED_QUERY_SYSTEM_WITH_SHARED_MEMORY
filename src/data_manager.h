@@ -7,10 +7,14 @@
 
 class DataManager {
 public:
+    // Constructor that takes a node ID
+    DataManager(const std::string& nodeId = "");
+    
     void loadAll();
     std::vector<basecamp::Record> filterByInjuryRange(int minI, int maxI);
     
 private:
+    std::string nodeId_; // The ID of the node this DataManager belongs to
     std::vector<basecamp::Record> allRecs_;
     
     // Helper methods for CSV parsing

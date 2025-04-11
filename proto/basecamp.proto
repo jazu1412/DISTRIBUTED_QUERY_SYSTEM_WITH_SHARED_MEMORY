@@ -2,15 +2,15 @@ syntax = "proto3";
 
 package basecamp;
 
-// A single record with some numeric fields.
+// A single record 
 message Record {
     int32 record_id = 1;
-    string borough = 2;         // e.g. "QUEENS", "BRONX" etc.
-    int32 injury_count = 3;     // for demonstration
+    string borough = 2;         
+    int32 injury_count = 3;    
     string other_fields = 4;
 }
 
-// The query request structure with a query_id and range filters
+
 message QueryRequest {
     string query_id = 1;   // unique ID for dedup caching
     int32 min_injury = 2;
@@ -18,12 +18,12 @@ message QueryRequest {
     string sender_id = 4;  // to avoid sending back immediately
 }
 
-// A list of records in response
+//  list of records in response
 message QueryResponse {
     repeated Record records = 1;
 }
 
 service QueryService {
-    // Asynchronous or sync gRPC method to get records in [min_injury, max_injury]
+  
     rpc QueryByInjuryRange(QueryRequest) returns (QueryResponse);
 }
